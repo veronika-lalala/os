@@ -1,0 +1,80 @@
+#!/bin/bash
+function help(){
+ echo "Этот скрипт осуществляет резервное копирование файлов.Записывает файлы с указанным расширением в архив, затем копируюет этот архив в указанную папку. Название копий начинается с backup"
+ echo "-s ключ, который в качестве аргумента принимает путь (относительный или абсолютный) к директории, где расположены необходимые файлы"
+ echo "-f ключ, который в качестве аргумента принимает путь (относительный или абсолютный) к директории, в которой будут хранится резервные копии"
+ echo "-e ключ, который в качестве аргумента принимает  расширение файлов, резервную копию, которых необходимо осуществить. Важно! Расширение передается следующим образом: ./log"
+ echo "-a ключ, который в качестве аргумента принимает название архива, в котором будут хранится исходные файлы нужного расширения. Будьте осторожны, этот архив  будет очищен перед записью в него неоходимых файлов"
+ echo "-t ключ, который используется для обеспечения переодичность копирования. В качестве аргументы передается промежуток времени, через который будет осуществляться резервное копирование файлов.Пример передачи аргумента:15 - в секундах, 15m - в минутах, 15h - в часах, 15d - в днях "
+ echo "-n ключ, который используется для обеспечения возможности вытеснения старой копии. При включении данной опции в качестве аргумента передается число n, если в месте хранения уже есть n резервных копий, то удаляется самая старая из них"
+ echo "-h ключ, который используется для получения справки о скрипте"
+ echo "Пример использования: ./skript -s ./data -f ./copy -e .log -a data.zip -t 15h -n 20"  
+}
+>error.log
+exec 2> error.log
+while getopts  s:f:e:a:t:n:h opt ; do
+	case $opt in
+	    t) timer=$OPTARG;;
+	    n) n=$OPTARG;;
+	    h) help
+	       exit 0;;
+	    a) source_arh="$OPTARG";;	
+	    s) source_dir_relative_path="$OPTARG";;
+	    f) final_dir_relative_path="$OPTARG";;
+	    e) expansion="$OPTARG";;
+	    \?) echo "неправильный ключ"
+		help
+		exit 1;;
+	esac
+done
+if [ "$#" -eq 0 ];then
+echo "вы не ввели необходимые параметры!"
+echo "the necessary parameters are missing">>error.log
+help
+else
+source_dir="$(readlink -f "$source_dir_relative_path")"
+final_dir="$(readlink -f "$final_dir_relative_path")"
+if ! [ -d "$source_dir" ];then
+echo "Каталога "$source_dir" не существует"
+exit 1
+fi
+if ! [ -d "$final_dir" ];then
+echo "Каталога "$final_dir" не существует"
+exit 1
+fi
+i=0
+while(true);do
+	count=$(find "${final_dir}" -maxdepth 1 -type f -name "*.zip" | wc -l)
+	echo $i $count $n
+	((i+=1))
+	files=$(find "$source_dir" -type f -name "*$expansion")
+	if [ -f "${source_dir}/${source_arh}" ]; then
+		rm "${source_dir}/${source_arh}"
+	fi
+	if [ -n "$files" ]; then
+		while [ "$count" -ge  "$n" ];do
+		oldest_zip=$(ls -t "$final_dir"/backup_*.zip | tail -n 1)
+		rm "$oldest_zip"
+		echo aaa
+		count=$(find "${final_dir}" -maxdepth 1 -type f -name "*.zip" | wc -l)
+		if [ "$count" -lt "$n" ]; then
+		break
+		fi
+		done
+		if [ -n  "$(command -v zip)" ];then
+			zip "${source_dir}/${source_arh}" $files >> "process.log"
+		else
+			echo "утилита zip  не найдена"
+			exit 1
+		fi
+		source_sum=$(md5sum "${source_dir}/${source_arh}" | awk '{print $1}')
+		arh_copy_name="backup_$(date +%H:%M:%S_%d.%m.%Y).zip"
+		cp "${source_dir}/${source_arh}" "${final_dir}/${arh_copy_name}"
+		backup_sum=$(md5sum "${final_dir}/${arh_copy_name}" | awk '{print $1}')
+		if [ "$source_sum" != "$backup_sum" ]; then
+		echo ""${final_dir}/${arh_copy_name}" is an incomplete backup">>error.log 
+		fi
+	fi
+sleep "$timer"
+done
+fi
